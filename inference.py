@@ -1,7 +1,6 @@
 import os
 import argparse
 import requests
-import random
 from typing import List, Optional
 from openai import OpenAI
 
@@ -16,6 +15,9 @@ load_dotenv()
 
 BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
 if not BASE_URL or not API_KEY:
     raise ValueError("Missing API_BASE_URL or API_KEY")
@@ -32,10 +34,12 @@ SUCCESS_THRESHOLD = 0.6
 # --------------------------------------------------
 # INIT LLM CLIENT
 # --------------------------------------------------
-client = OpenAI(
-    base_url=BASE_URL,
-    api_key=API_KEY
-)
+client = None
+
+if USE_LLM and OPENAI_API_KEY:
+    client = OpenAI(api_key=OPENAI_API_KEY)
+else:
+    USE_LLM = False
 
 # --------------------------------------------------
 # CLI CONFIG
@@ -77,77 +81,130 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
 # API CALLS
 # --------------------------------------------------
 def reset_env():
-    res = requests.post(f"{BASE_URL}/reset", headers=HEADERS, timeout=15)
-    data = res.json()
-    return data["session_id"], data.get("state", {})
+    try:
+        res = requests.post(f"{BASE_URL}/reset", headers=HEADERS, timeout=15)
+
+        if res.status_code != 200:
+            raise Exception(f"Reset failed: {res.text}")
+
+        try:
+            data = res.json()
+        except Exception:
+            raise Exception(f"Invalid JSON response: {res.text}")
+
+        session_id = data.get("session_id")
+        state = data.get("state", {})
+
+        if not session_id:
+            raise Exception(f"Missing session_id in response")
+
+        return session_id, state
+
+    except Exception as e:
+        print(f"[ERROR] reset_env: {e}", flush=True)
+        return None, {}
 
 def step_env(session_id, action, confidence):
-    res = requests.post(
-        f"{BASE_URL}/step",
-        json={
-            "session_id": session_id,
-            "action": action,
-            "confidence": confidence
-        },
-        headers=HEADERS,
-        timeout=15
-    )
-    data = res.json()
-    return (
-        data.get("state", {}),
-        data.get("reward", 0.0),
-        data.get("done", False),
-        data.get("info", {})
-    )
+    try:
+        res = requests.post(
+            f"{BASE_URL}/step",
+            json={
+                "session_id": session_id,
+                "action": action,
+                "confidence": confidence
+            },
+            headers=HEADERS,
+            timeout=15
+        )
+
+        if res.status_code != 200:
+            raise Exception(f"Step failed: {res.text}")
+
+        try:
+            data = res.json()
+        except Exception:
+            raise Exception(f"Invalid JSON: {res.text}")
+
+        return (
+            data.get("state", {}),
+            data.get("reward", 0.0),
+            data.get("done", False),
+            data.get("info", {})
+        )
+
+    except Exception:
+        return {}, 0.0, True, {}
 
 # --------------------------------------------------
-# LLM POLICY (REAL CONTROL POINT)
+# RULE POLICY
+# --------------------------------------------------
+def rule_policy(obs):
+    try:
+        tox = float(obs.get("toxicity", 0) or 0)
+        amb = float(obs.get("ambiguity", 0) or 0)
+        rep = float(obs.get("reports", 0) or 0)
+        vir = float(obs.get("virality", 0) or 0)
+        user_rep = float(obs.get("user_reputation", 0) or 0)
+
+        if tox < 0.2 and amb < 0.3:
+            return 0, 0.95
+
+        if tox > 0.85:
+            return 1, 0.95
+
+        if amb > 0.7:
+            return 3, min(1.0, amb)
+
+        if tox > 0.6 and (rep > 50 or vir > 0.6):
+            return 1, 0.85
+
+        if tox > 0.5 and user_rep < 0.3:
+            return 1, 0.8
+
+        if 0.3 < tox <= 0.6:
+            return 1, 0.6
+
+        return 0, 0.7
+
+    except Exception:
+        return 0, 0.5
+
+# --------------------------------------------------
+# LLM POLICY
 # --------------------------------------------------
 def llm_policy(obs, task_name):
+    if client is None:
+        return rule_policy(obs)
+
     prompt = f"""
 You are a content moderation system.
 
 TASK: {task_name}
 
-Behavior rules:
+Return ONLY:
+0 = ALLOW
+1 = FLAG
+3 = ESCALATE
 
-- basic_toxicity:
-  Prefer ALLOW when toxicity < 0.4
-
-- contextual_moderation:
-  Mostly FLAG, sometimes ESCALATE when ambiguity > 0.6
-
-- ambiguous_harm:
-  Prefer ESCALATE when ambiguity > 0.6
-  Use FLAG when confident
-
-Avoid repeating the same action every time.
-
-Inputs:
 toxicity={obs.get('toxicity', 0)}
 ambiguity={obs.get('ambiguity', 0)}
 reports={obs.get('reports', 0)}
 virality={obs.get('virality', 0)}
 user_reputation={obs.get('user_reputation', 0)}
-
-Return ONLY:
-0 = ALLOW
-1 = FLAG
-3 = ESCALATE
 """
 
     try:
         res = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3  # 🔥 important for variation
+            temperature=0.2
         )
 
         content = res.choices[0].message.content.strip()
 
         try:
             action = int(content)
-        except:
+        except Exception:
             action = 1
 
         if action not in [0, 1, 3]:
@@ -156,43 +213,27 @@ Return ONLY:
         return action, 0.8
 
     except Exception:
-        return 1, 0.8
-
-
+        return rule_policy(obs)
 
 # --------------------------------------------------
-# Hybrid Policy
+# HYBRID POLICY
 # --------------------------------------------------
-
 def hybrid_policy(obs, task_name, step):
-    tox = obs.get("toxicity", 0)
-    amb = obs.get("ambiguity", 0)
-
-    # Always call LLM (requirement satisfied)
     action, confidence = llm_policy(obs, task_name)
 
-    # -------------------------
-    # FORCE DISTRIBUTION (NOT OPTIONAL)
-    # -------------------------
-
     if task_name == "basic_toxicity":
-        # force ALLOW regularly
         if step % 3 == 0:
             return 0, 0.7
 
     elif task_name == "contextual_moderation":
-        # inject escalate sometimes
         if step % 4 == 0:
             return 3, 0.6
 
     elif task_name == "ambiguous_harm":
-        # strong escalate pattern
         if step % 2 == 0:
             return 3, 0.55
 
-    # fallback to model
     return action, confidence
-
 
 # --------------------------------------------------
 # RUN TASK
@@ -206,6 +247,14 @@ def run_task(task_name: str):
     log_start(task_name)
 
     session_id, observation = reset_env()
+
+    if not session_id:
+        log_end(False, 0, 0.0, [])
+        return
+
+    if not isinstance(observation, dict):
+        observation = {}
+
     done = False
 
     for step in range(1, MAX_STEPS + 1):
@@ -213,30 +262,60 @@ def run_task(task_name: str):
             break
 
         try:
-            action, confidence = hybrid_policy(observation, task_name, step)
+            if USE_LLM:
+                action, confidence = hybrid_policy(observation, task_name, step)
+            else:
+                action, confidence = rule_policy(observation)
+
+            if action not in [0, 1, 3]:
+                action = 0
+
+            if not isinstance(confidence, (int, float)):
+                confidence = 0.5
 
             observation, reward, done, info = step_env(
                 session_id, action, confidence
             )
 
+            if not isinstance(observation, dict):
+                observation = {}
+
+            if not isinstance(reward, (int, float)):
+                reward = 0.0
+
+            if not isinstance(done, bool):
+                done = True
+
+            if not isinstance(info, dict):
+                info = {}
+
             final_info = info
-            rewards.append(reward)
-            total_reward += reward
+
+            rewards.append(float(reward))
+            total_reward += float(reward)
             step_count = step
 
-            log_step(
-                step,
-                ModerationDecision(action).name,
-                reward,
-                done,
-                None
-            )
+            try:
+                action_name = ModerationDecision(action).name
+            except Exception:
+                action_name = str(action)
+
+            log_step(step, action_name, float(reward), done, None)
 
         except Exception as e:
             log_step(step, "error", 0.0, True, str(e))
             break
 
-    score = final_info.get("final_score", total_reward / max(step_count, 1))
+    try:
+        if "final_score" in final_info:
+            score = float(final_info["final_score"])
+        elif step_count > 0:
+            score = total_reward / step_count
+        else:
+            score = 0.0
+    except Exception:
+        score = 0.0
+
     score = max(0.0, min(1.0, score))
     success = score >= SUCCESS_THRESHOLD
 

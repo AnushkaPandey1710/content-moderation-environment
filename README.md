@@ -92,11 +92,11 @@ ambiguous_harm	Hard	Handles ambiguous harmful content
 
 The reward function provides dense feedback:
 
-✅ Positive reward for correct actions
-⚠️ Partial reward for reasonable alternatives (e.g., escalate)
-❌ Penalty for incorrect moderation
-🔥 Strong penalty for missing harmful content
-📉 Penalty increases with virality and severity
+Positive reward for correct actions
+Partial reward for reasonable alternatives (e.g., escalate)
+Penalty for incorrect moderation
+Strong penalty for missing harmful content
+Penalty increases with virality and severity
 
 Rewards are normalized to [0, 1].
 
@@ -112,11 +112,11 @@ python app.py
 Server will run on:
 
 http://0.0.0.0:7860
-https://anushkapandey1710-content-moderation-env.hf.space/
-▶️ 9. Running Inference
+https://anushkapandey1710-content-moderation-environment.hf.space/
+Running Inference
 Single Task (STRICT - for evaluation)
 python inference.py \
-  --base_url https://anushkapandey1710-content-moderation-env.hf.space \
+  --base_url https://anushkapandey1710-content-moderation-environment.hf.space/docs
   --task basic_toxicity
 
 Run other tasks:
@@ -124,8 +124,9 @@ Run other tasks:
 --task contextual_moderation
 --task ambiguous_harm
 Multi-task (Demo Mode)
-python inference.py --base_url https://anushkapandey1710-content-moderation-env.hf.space
-🔹 STDOUT FORMAT (STRICT)
+python inference.py --base_url https://anushkapandey1710-content-moderation-environment.hf.space/docs
+
+STDOUT FORMAT (STRICT)
 
 The inference script strictly follows required output format:
 
@@ -146,7 +147,9 @@ Boolean values must be lowercase
 Score must be between 0 and 1
 10. API Usage
 Swagger UI
-https://anushkapandey1710-content-moderation-env.hf.space/docs
+
+https://anushkapandey1710-content-moderation-environment.hf.space/docs
+
 Endpoints
 Reset Environment
 POST /reset
@@ -189,7 +192,8 @@ It also includes retry logic to handle Hugging Face cold starts.
 ### How to Run
 
 ```bash
-bash validate.sh https://anushkapandey1710-content-moderation-env.hf.space
+ bash validate-submission.sh https://anushkapandey1710-content-moderation-environment.hf.space
+
 
 
 12. Future Improvements

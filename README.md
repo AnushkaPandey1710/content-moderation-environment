@@ -159,9 +159,7 @@ It also includes retry logic to handle Hugging Face cold starts.
 ---
 
 How to Run
-
-```bash
- bash validate-submission.sh https://anushkapandey1710-content-moderation-environment.hf.space
+bash validate-submission.sh https://anushkapandey1710-content-moderation-environment.hf.space
 
 12. Future Improvements
 PPO / RL-based training

@@ -51,8 +51,9 @@ if USE_LLM:
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base_url", type=str, default=None)
-    return parser.parse_args()
-
+    
+    args, unknown = parser.parse_known_args()  # 
+    return args
 
 args = get_args()
 

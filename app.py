@@ -10,6 +10,10 @@ from models import (
     ContentModerationAction
 )
 
+from tasks import TASKS
+
+
+
 # --------------------------------------------------
 # LOAD ENV
 # --------------------------------------------------
@@ -56,25 +60,7 @@ def verify_api_key(request: Request):
 
 
 
-from inference import run_task
-from tasks import TASKS
 
-
-# --------------------------------------------------
-# 🔥 TEST INFERENCE ENDPOINT
-# --------------------------------------------------
-@app.get("/test-inference")
-def test_inference():
-    results = []
-
-    for task_name in TASKS.keys():
-        run_task(task_name)
-        results.append(f"Completed {task_name}")
-
-    return {
-        "status": "completed",
-        "tasks": results
-    }
 # --------------------------------------------------
 # RESET
 # --------------------------------------------------
@@ -87,7 +73,10 @@ async def reset(request: Request):
 
         env = ContentModerationEnvironment()
         obs = env.reset()
-
+        if hasattr(obs, "dict"):
+            obs = obs.dict()
+        elif hasattr(obs, "model_dump"):
+            obs = obs.model_dump()
         sessions[session_id] = env
 
         return {
@@ -128,6 +117,10 @@ async def step(request: Request):
 
         result = env.step(action_obj)
 
+        if hasattr(result, "dict"):
+            result = result.dict()
+        elif hasattr(result, "model_dump"):
+            result = result.model_dump()
         return {
             "session_id": session_id,
             "state": result,

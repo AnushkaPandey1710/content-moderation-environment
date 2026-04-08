@@ -5,7 +5,7 @@ runtime: fastapi
 app: server.app:app
 port: 7860
 
-id: content-moderation-env
+id: content-moderation-environment
 name: Content Moderation RL Environment
 description: >
   A realistic reinforcement learning environment simulating content moderation decisions.

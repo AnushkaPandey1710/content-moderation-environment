@@ -27,8 +27,8 @@ class ContentModerationEnv(
     # --------------------------------------------------
     def _step_payload(self, action: ContentModerationAction) -> Dict:
         return {
-            "action": int(action.action),   # ✅ Enum → int
-            "confidence": action.confidence  # ✅ REQUIRED
+            "action": int(action.action),  
+            "confidence": action.confidence  
         }
 
     # --------------------------------------------------

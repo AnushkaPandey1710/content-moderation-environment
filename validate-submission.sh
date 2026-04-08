@@ -28,7 +28,7 @@ log()  { echo "[INFO] $1"; }
 command -v curl >/dev/null || fail "curl is required"
 
 if ! command -v jq &>/dev/null; then
-  echo "⚠️ jq not found. Please install jq before running this script."
+  echo "jq not found. Please install jq before running this script."
   exit 1
 fi
 
@@ -84,7 +84,7 @@ else
 fi
 
 # -----------------------------
-# Step 2: STATE (NEW ✅)
+# Step 2: STATE 
 # -----------------------------
 echo ""
 echo "Step 2/5: Checking /state..."
@@ -129,7 +129,7 @@ else
 fi
 
 # -----------------------------
-# Step 4: SCHEMA (NEW ✅)
+# Step 4: SCHEMA
 # -----------------------------
 echo ""
 echo "Step 4/5: Checking /schema..."

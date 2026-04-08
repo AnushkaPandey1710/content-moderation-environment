@@ -1,5 +1,5 @@
 [project]
-name = "content-moderation-env"
+name = "content-moderation-environment"
 version = "1.0.0"
 description = "Content moderation RL environment"
 dependencies = [

@@ -49,12 +49,12 @@ class ContentModerationEnvironment(Environment):
         texts = [
             ("I hate you idiot", 0.9),
             ("Have a nice day!", 0.1),
-            ("You people ruin everything 🙃", 0.7),
+            ("You people ruin everything", 0.7),
             ("This game is killing me lol", 0.3),
             ("Go back to where you came from", 0.85),
             ("I disagree with your opinion", 0.2),
             ("You're the worst person ever", 0.75),
-            ("LOL this is insane 😂", 0.2),
+            ("LOL this is insane", 0.2),
         ]
 
         contexts = [
@@ -149,7 +149,7 @@ class ContentModerationEnvironment(Environment):
 
         sample = self.data[self.current_idx]
 
-        # ✅ FIXED: true label aligned with TASKS
+        
         true_label = 1 if self.task["filter_fn"](sample) else 0
 
         act = int(action.action)
@@ -234,7 +234,7 @@ class ContentModerationEnvironment(Environment):
         )
 
     # --------------------------------------------------
-    # REWARD FUNCTION (FIXED)
+    # REWARD FUNCTION
     # --------------------------------------------------
     def _calculate_reward(self, act: int, confidence: float, sample: dict) -> float:
         """
@@ -245,18 +245,18 @@ class ContentModerationEnvironment(Environment):
 
         reward = 0.0
 
-        # ✅ Correct decision
+        # Correct decision
         if act == true_label:
             reward += 1.0 * confidence
 
-        # ⚠️ Escalation
+        # Escalation
         elif act == 3:
             if confidence < 0.6:
                 reward += 0.2
             else:
                 reward -= 0.2
 
-        # ❌ Wrong decision
+        # Wrong decision
         else:
             reward -= 1.0 * confidence
 

@@ -65,7 +65,7 @@ async def step(request: Request):
 
 
 # --------------------------------------------------
-# STATE (NEW ✅)
+# STATE
 # --------------------------------------------------
 @app.post("/state")
 async def get_state(request: Request):
@@ -85,7 +85,7 @@ async def get_state(request: Request):
     idx = min(env.current_idx, len(env.data) - 1)
     sample = env.data[idx]
 
-    # 🔥 DIRECT mapping (NO builder)
+    
     state = {
         "current_message": sample["text"],
         "context": sample["context"],
@@ -108,7 +108,7 @@ async def get_state(request: Request):
         "state": state
     }
 # --------------------------------------------------
-# SCHEMA (NEW ✅)
+# SCHEMA
 # --------------------------------------------------
 @app.get("/schema")
 def schema():

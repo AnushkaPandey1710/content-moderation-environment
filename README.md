@@ -52,14 +52,6 @@ The agent can take one of the following actions:
 | 2 | REMOVE |
 | 3 | ESCALATE |
 
-### Action Format
-
-```json
-{
-  "action": 1,
-  "confidence": 0.8
-}
-
 
 4. Observation Space
 

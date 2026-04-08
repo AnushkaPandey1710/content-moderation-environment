@@ -12,13 +12,21 @@ from dotenv import load_dotenv
 # --------------------------------------------------
 # LOAD ENV
 # --------------------------------------------------
-load_dotenv(".env")
+load_dotenv()
 
 BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-print("OPENAI_API_KEY:", OPENAI_API_KEY)
+# 🔍 DEBUG (masked)
+def mask(key):
+    if not key:
+        return None
+    return key[:4] + "..." + key[-4:]
+
+print("=== ENV DEBUG ===")
+print("API_BASE_URL:", BASE_URL)
+print("API_KEY:", mask(API_KEY))
+print("=================")
 
 if not BASE_URL or not API_KEY:
     raise ValueError("Missing API_BASE_URL or API_KEY")
@@ -35,25 +43,30 @@ SUCCESS_THRESHOLD = 0.6
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
 # --------------------------------------------------
-# INIT LLM CLIENT
+# INIT LLM CLIENT (EVALUATOR-COMPLIANT)
 # --------------------------------------------------
 client = None
 
-if USE_LLM:
-    if not OPENAI_API_KEY:
-        raise ValueError("Missing OPENAI_API_KEY for LLM usage")
-
-    client = OpenAI(api_key=OPENAI_API_KEY)
+if USE_LLM and BASE_URL and API_KEY:
+    print("✅ Using evaluator LLM endpoint")
+    client = OpenAI(
+        base_url=BASE_URL,
+        api_key=API_KEY
+    )
+else:
+    print("⚠️ Missing API_BASE_URL/API_KEY → fallback to rule_policy")
+    USE_LLM = False
 
 # --------------------------------------------------
-# CLI CONFIG
+# CLI CONFIG (SAFE FOR UVICORN)
 # --------------------------------------------------
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base_url", type=str, default=None)
-    
-    args, unknown = parser.parse_known_args()  # 
+
+    args, unknown = parser.parse_known_args()  # ✅ FIX
     return args
+
 
 args = get_args()
 
@@ -201,6 +214,7 @@ Return ONLY a number:
 
     except Exception:
         return rule_policy(obs)
+
 # --------------------------------------------------
 # RUN TASK
 # --------------------------------------------------

@@ -1,5 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Header
 from uuid import uuid4
+import os
+from dotenv import load_dotenv
 
 from server.content_moderation_environment import ContentModerationEnvironment
 from models import (
@@ -7,106 +9,152 @@ from models import (
     ContentModerationAction
 )
 
-app = FastAPI()
+import uvicorn
+
+# --------------------------------------------------
+# LOAD ENV
+# --------------------------------------------------
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
+
+if not API_KEY:
+    raise ValueError("API_KEY is required")
+# --------------------------------------------------
+# APP INIT
+# --------------------------------------------------
+app = FastAPI(title="Content Moderation Environment API")
 
 # Store sessions
 sessions = {}
+
+# --------------------------------------------------
+# AUTH HELPER
+# --------------------------------------------------
+def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # --------------------------------------------------
 # RESET
 # --------------------------------------------------
 @app.post("/reset")
-async def reset():
-    session_id = str(uuid4())
+async def reset(x_api_key: str = Header(None)):
+    verify_api_key(x_api_key)
 
-    env = ContentModerationEnvironment()
-    obs = env.reset()
+    try:
+        session_id = str(uuid4())
 
-    sessions[session_id] = env
+        env = ContentModerationEnvironment()
+        obs = env.reset()
 
-    return {
-        "session_id": session_id,
-        "state": obs
-    }
+        sessions[session_id] = env
+
+        return {
+            "session_id": session_id,
+            "state": obs
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {str(e)}")
 
 
 # --------------------------------------------------
 # STEP
 # --------------------------------------------------
 @app.post("/step")
-async def step(request: Request):
-    data = await request.json()
+async def step(request: Request, x_api_key: str = Header(None)):
+    verify_api_key(x_api_key)
 
-    session_id = data.get("session_id")
-    action = data.get("action")
-    confidence = data.get("confidence", 0.5)
+    try:
+        data = await request.json()
 
-    if session_id not in sessions:
-        return {"error": "Invalid session_id"}
+        session_id = data.get("session_id")
+        action = data.get("action")
+        confidence = data.get("confidence", 0.5)
 
-    env = sessions[session_id]
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
 
-    # Proper OpenEnv Action model
-    action_obj = ContentModerationAction(
-        action=action,
-        confidence=confidence
-    )
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="Invalid session_id")
 
-    result = env.step(action_obj)
+        env = sessions[session_id]
 
-    return {
-        "session_id": session_id,
-        "state": result,
-        "reward": result.get("reward", 0.0),
-        "done": result.get("done", False),
-        "info": result.get("info", {})
-    }
+        action_obj = ContentModerationAction(
+            action=action,
+            confidence=confidence
+        )
+
+        result = env.step(action_obj)
+
+        return {
+            "session_id": session_id,
+            "state": result,
+            "reward": result.get("reward", 0.0),
+            "done": result.get("done", False),
+            "info": result.get("info", {})
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Step failed: {str(e)}")
 
 
 # --------------------------------------------------
 # STATE
 # --------------------------------------------------
 @app.post("/state")
-async def get_state(request: Request):
-    data = await request.json()
-    session_id = data.get("session_id")
+async def get_state(request: Request, x_api_key: str = Header(None)):
+    verify_api_key(x_api_key)
 
-    if session_id not in sessions:
-        return {"error": "Invalid session_id"}
+    try:
+        data = await request.json()
+        session_id = data.get("session_id")
 
-    env = sessions[session_id]
+        if not session_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
 
-    # If no data yet (edge case)
-    if not env.data:
-        return {"session_id": session_id, "state": {}}
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail="Invalid session_id")
 
-    # Safe index
-    idx = min(env.current_idx, len(env.data) - 1)
-    sample = env.data[idx]
+        env = sessions[session_id]
 
-    
-    state = {
-        "current_message": sample["text"],
-        "context": sample["context"],
-        "message_length": len(sample["text"]),
-        "toxicity": sample["toxicity"],
-        "virality": sample["virality"],
-        "reports": sample["reports"],
-        "user_reputation": sample["user_reputation"],
-        "ambiguity": sample["ambiguity"],
-        "severity": sample["severity"],
-        "step": env._state.step_count,
-        "total_steps": env.max_steps,
-        "reward": 0.0,
-        "done": False,
-        "info": {}
-    }
+        if not env.data:
+            return {
+                "session_id": session_id,
+                "state": {},
+                "message": "No data available yet"
+            }
 
-    return {
-        "session_id": session_id,
-        "state": state
-    }
+        idx = min(env.current_idx, len(env.data) - 1)
+        sample = env.data[idx]
+
+        state = {
+            "current_message": sample.get("text", ""),
+            "context": sample.get("context", ""),
+            "message_length": len(sample.get("text", "")),
+            "toxicity": sample.get("toxicity", 0),
+            "virality": sample.get("virality", 0),
+            "reports": sample.get("reports", 0),
+            "user_reputation": sample.get("user_reputation", 0),
+            "ambiguity": sample.get("ambiguity", 0),
+            "severity": sample.get("severity", 0),
+            "step": getattr(env._state, "step_count", 0),
+            "total_steps": getattr(env, "max_steps", 0),
+            "reward": 0.0,
+            "done": False,
+            "info": {}
+        }
+
+        return {
+            "session_id": session_id,
+            "state": state
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"State fetch failed: {str(e)}")
+
+
 # --------------------------------------------------
 # SCHEMA
 # --------------------------------------------------
@@ -132,12 +180,11 @@ def health():
     return {"status": "ok"}
 
 
-# server/app.py
-
-import uvicorn
-
+# --------------------------------------------------
+# MAIN ENTRYPOINT
+# --------------------------------------------------
 def main():
-    uvicorn.run("app:app", host="0.0.0.0", port=7860)
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
 
 
 if __name__ == "__main__":

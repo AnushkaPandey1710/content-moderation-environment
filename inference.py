@@ -7,38 +7,46 @@ from openai import OpenAI
 from models import ModerationDecision
 from tasks import TASKS
 
-# -----------------------
+from dotenv import load_dotenv
+
+# --------------------------------------------------
+# LOAD ENV
+# --------------------------------------------------
+load_dotenv(".env")
+
+BASE_URL = os.getenv("API_BASE_URL")
+API_KEY = os.getenv("API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+
+if not BASE_URL or not API_KEY:
+    raise ValueError("Missing API_BASE_URL or API_KEY")
+
+# --------------------------------------------------
 # CONFIG
-# -----------------------
+# --------------------------------------------------
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 ENV_NAME = "content-moderation"
 
 MAX_STEPS = 10
 SUCCESS_THRESHOLD = 0.6
 
-#  REQUIRED (Phase 2 FIX)
-API_BASE_URL = os.environ.get("API_BASE_URL")
-API_KEY = os.environ.get("API_KEY")
+USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
-USE_LLM = True  #  MUST be True for Phase 2
-
-# -----------------------
+# --------------------------------------------------
 # INIT LLM CLIENT
-# -----------------------
+# --------------------------------------------------
 client = None
 
 if USE_LLM:
-    if not API_BASE_URL or not API_KEY:
-        raise ValueError("Missing API_BASE_URL or API_KEY (required for evaluation)")
+    if not OPENAI_API_KEY:
+        raise ValueError("Missing OPENAI_API_KEY for LLM usage")
 
-    client = OpenAI(
-        base_url=API_BASE_URL,   # 
-        api_key=API_KEY          # 
-    )
+    client = OpenAI(api_key=OPENAI_API_KEY)
 
-# -----------------------
+# --------------------------------------------------
 # CLI CONFIG
-# -----------------------
+# --------------------------------------------------
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base_url", type=str, default=None)
@@ -47,18 +55,22 @@ def get_args():
 
 args = get_args()
 
-BASE_URL = args.base_url or os.getenv("BASE_URL") or \
-    "https://anushkapandey1710-content-moderation-environment.hf.space"
+if args.base_url:
+    BASE_URL = args.base_url
 
+# --------------------------------------------------
+# HEADERS
+# --------------------------------------------------
+HEADERS = {
+    "x-api-key": API_KEY,
+    "Content-Type": "application/json"
+}
 
-# -----------------------
-# LOGGING (STRICT FORMAT)
-# -----------------------
+# --------------------------------------------------
+# LOGGING
+# --------------------------------------------------
 def log_start(task: str):
-    print(
-        f"[START] task={task} env={ENV_NAME} model={MODEL_NAME}",
-        flush=True
-    )
+    print(f"[START] task={task} env={ENV_NAME} model={MODEL_NAME}", flush=True)
 
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]):
@@ -77,20 +89,17 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
         flush=True
     )
 
-
-# -----------------------
+# --------------------------------------------------
 # API CALLS
-# -----------------------
+# --------------------------------------------------
 def reset_env():
-    res = requests.post(f"{BASE_URL}/reset", timeout=15)
+    res = requests.post(f"{BASE_URL}/reset", headers=HEADERS, timeout=15)
+
+    if res.status_code != 200:
+        raise Exception(f"Reset failed: {res.text}")
+
     data = res.json()
-
-    state = data["state"]
-
-    if "observation" in state:
-        return data["session_id"], state["observation"]
-
-    return data["session_id"], state
+    return data["session_id"], data.get("state", {})
 
 
 def step_env(session_id, action, confidence):
@@ -101,37 +110,31 @@ def step_env(session_id, action, confidence):
             "action": action,
             "confidence": confidence
         },
+        headers=HEADERS,
         timeout=15
     )
 
-    data = res.json()
-    state = data["state"]
+    if res.status_code != 200:
+        raise Exception(f"Step failed: {res.text}")
 
-    if "observation" in state:
-        return (
-            state["observation"],
-            state.get("reward", 0.0),
-            state.get("done", False),
-            state.get("info", {})
-        )
+    data = res.json()
 
     return (
-        state,
+        data.get("state", {}),
         data.get("reward", 0.0),
         data.get("done", False),
         data.get("info", {})
     )
 
-
-# -----------------------
+# --------------------------------------------------
 # RULE POLICY (fallback)
-# -----------------------
+# --------------------------------------------------
 def rule_policy(obs):
-    tox = obs["toxicity"]
-    amb = obs["ambiguity"]
-    rep = obs["reports"]
-    vir = obs["virality"]
-    user_rep = obs["user_reputation"]
+    tox = obs.get("toxicity", 0)
+    amb = obs.get("ambiguity", 0)
+    rep = obs.get("reports", 0)
+    vir = obs.get("virality", 0)
+    user_rep = obs.get("user_reputation", 0)
 
     if tox < 0.2 and amb < 0.3:
         return 0, 0.95
@@ -153,21 +156,20 @@ def rule_policy(obs):
 
     return 0, 0.7
 
-
-# -----------------------
-# LLM POLICY (REQUIRED)
-# -----------------------
+# --------------------------------------------------
+# LLM POLICY
+# --------------------------------------------------
 def llm_policy(obs):
     prompt = f"""
 You are a content moderation agent.
 
-toxicity={obs['toxicity']}
-ambiguity={obs['ambiguity']}
-reports={obs['reports']}
-virality={obs['virality']}
-user_reputation={obs['user_reputation']}
+toxicity={obs.get('toxicity', 0)}
+ambiguity={obs.get('ambiguity', 0)}
+reports={obs.get('reports', 0)}
+virality={obs.get('virality', 0)}
+user_reputation={obs.get('user_reputation', 0)}
 
-Return ONLY:
+Return ONLY a number:
 0 = ALLOW
 1 = FLAG
 3 = ESCALATE
@@ -180,7 +182,12 @@ Return ONLY:
             temperature=0
         )
 
-        action = int(res.choices[0].message.content.strip())
+        content = res.choices[0].message.content.strip()
+
+        try:
+            action = int(content)
+        except:
+            action = 0
 
         if action not in [0, 1, 3]:
             action = 0
@@ -188,13 +195,11 @@ Return ONLY:
         return action, 0.9
 
     except Exception:
-        # fallback
         return rule_policy(obs)
 
-
-# -----------------------
-# RUN SINGLE TASK
-# -----------------------
+# --------------------------------------------------
+# RUN TASK
+# --------------------------------------------------
 def run_task(task_name: str):
     rewards: List[float] = []
     total_reward = 0.0
@@ -250,10 +255,9 @@ def run_task(task_name: str):
 
     log_end(success, step_count, score, rewards)
 
-
-# -----------------------
+# --------------------------------------------------
 # MAIN
-# -----------------------
+# --------------------------------------------------
 if __name__ == "__main__":
     for task_name in TASKS.keys():
         run_task(task_name)

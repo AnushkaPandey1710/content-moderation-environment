@@ -101,8 +101,8 @@ pip install -r requirements.txt
 http://0.0.0.0:7860
 
 Hugging Face space URL
-https://huggingface.co/spaces/AnushkaPandey1710/content-moderation-environment
-https://anushkapandey1710-content-moderation-environment.hf.space/
+    https://huggingface.co/spaces/AnushkaPandey1710/content-moderation-environment
+    https://anushkapandey1710-content-moderation-environment.hf.space/
 
 9.Running Inference script
 
@@ -158,7 +158,7 @@ It also includes retry logic to handle Hugging Face cold starts.
 
 ---
 
-### How to Run
+How to Run
 
 ```bash
  bash validate-submission.sh https://anushkapandey1710-content-moderation-environment.hf.space

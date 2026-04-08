@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+openai
+requests
+gradio
+git+https://github.com/meta-pytorch/openenv.git

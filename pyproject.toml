@@ -1,0 +1,13 @@
+[project]
+name = "content-moderation-env"
+version = "1.0.0"
+description = "Content moderation RL environment"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "openenv-core",
+    "pydantic",
+]
+
+[project.scripts]
+server = "server.app:main"

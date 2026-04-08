@@ -1,0 +1,95 @@
+spec_version: 1
+
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+id: content-moderation-env
+name: Content Moderation RL Environment
+description: >
+  A realistic reinforcement learning environment simulating content moderation decisions.
+  Agents must decide whether to allow, moderate, or escalate content based on signals
+  such as toxicity, virality, user reputation, and ambiguity.
+
+entrypoint:
+  module: server.app
+  main: main
+
+
+tasks:
+  - id: basic_toxicity
+    description: Moderate content based on toxicity only (easy).
+    difficulty: easy
+
+  - id: contextual_moderation
+    description: Moderate content using toxicity, reports, and user reputation (medium).
+    difficulty: medium
+
+  - id: ambiguous_harm
+    description: Handle ambiguous but potentially harmful content (hard).
+    difficulty: hard
+
+observation_space:
+  type: object
+  properties:
+    current_message:
+      type: string
+    context:
+      type: string
+    message_length:
+      type: integer
+    toxicity:
+      type: number
+    virality:
+      type: number
+    reports:
+      type: integer
+    user_reputation:
+      type: number
+    ambiguity:
+      type: number
+    severity:
+      type: number
+    step:
+      type: integer
+    total_steps:
+      type: integer
+    reward:
+      type: number
+    done:
+      type: boolean
+
+action_space:
+  type: object
+  properties:
+    action:
+      type: integer
+      description: "0=allow, 1=moderate, 3=escalate"
+    confidence:
+      type: number
+      minimum: 0.0
+      maximum: 1.0
+
+reward:
+  type: number
+  range: [0.0, 1.0]
+  description: >
+    Reward is provided per step based on correctness and confidence.
+    Correct actions are rewarded proportionally to confidence.
+    Incorrect actions are penalized.
+    Escalation is rewarded only when uncertainty is high.
+    Final score is computed using task-specific graders.
+
+metadata:
+  author: Anushka Pandey
+  version: "1.0"
+  tags:
+    - reinforcement-learning
+    - content-moderation
+    - llm-agents
+    - safety
+
+dependencies:
+  - pip:
+      - -r requirements.txt

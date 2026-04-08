@@ -11,7 +11,8 @@ from models import (
 )
 
 from tasks import TASKS
-
+from models import StateRequest
+from models import StepRequest
 
 
 # --------------------------------------------------
@@ -92,18 +93,24 @@ async def reset(request: Request):
 # STEP
 # --------------------------------------------------
 @app.post("/step")
-async def step(request: Request):
+async def step(req: StepRequest, request: Request):
     verify_api_key(request)
 
     try:
+        session_id = req.session_id
+        action = req.action
+        confidence = req.confidence
+
+
+        body = await request.body()
+        if not body:
+            raise HTTPException(status_code=400, detail="Empty request body")
+
         data = await request.json()
 
-        session_id = data.get("session_id")
-        action = data.get("action")
-        confidence = data.get("confidence", 0.5)
 
         if not session_id:
-            raise HTTPException(status_code=400, detail="session_id is required")
+            raise HTTPException(status_code=400, detail="Session_id is required")
 
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="Invalid session_id")
@@ -137,15 +144,20 @@ async def step(request: Request):
 # STATE
 # --------------------------------------------------
 @app.post("/state")
-async def get_state(request: Request):
+@app.post("/state")
+async def get_state(req: StateRequest, request: Request):
     verify_api_key(request)
 
     try:
-        data = await request.json()
-        session_id = data.get("session_id")
+        session_id = req.session_id
+        
+        body = await request.body()
+        if not body:
+            raise HTTPException(status_code=400, detail="Empty request body")
+        
 
         if not session_id:
-            raise HTTPException(status_code=400, detail="session_id is required")
+            raise HTTPException(status_code=400, detail="Session_id is required")
 
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="Invalid session_id")

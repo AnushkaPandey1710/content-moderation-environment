@@ -40,3 +40,13 @@ class ContentModerationObservation(Observation):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
+
+from pydantic import BaseModel
+
+class StepRequest(BaseModel):
+    session_id: str
+    action: int
+    confidence: float = 0.5
+
+class StateRequest(BaseModel):
+    session_id: str

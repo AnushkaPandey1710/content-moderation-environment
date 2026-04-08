@@ -14,6 +14,17 @@ from models import (
 # LOAD ENV
 # --------------------------------------------------
 load_dotenv()
+
+BASE_URL = os.getenv("API_BASE_URL")
+API_KEY = os.getenv("API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+
+print("=== ENV DEBUG ===")
+print("API_BASE_URL:", BASE_URL)
+print("API_KEY:", API_KEY)
+print("OPENAI_API_KEY:", OPENAI_API_KEY)
+print("=================")
 API_KEY = os.getenv("API_KEY")  # OPTIONAL
 
 # --------------------------------------------------
@@ -51,6 +62,26 @@ def verify_api_key(request: Request):
     return True
 
 
+
+from inference import run_task
+from tasks import TASKS
+
+
+# --------------------------------------------------
+# 🔥 TEST INFERENCE ENDPOINT
+# --------------------------------------------------
+@app.get("/test-inference")
+def test_inference():
+    results = []
+
+    for task_name in TASKS.keys():
+        run_task(task_name)
+        results.append(f"Completed {task_name}")
+
+    return {
+        "status": "completed",
+        "tasks": results
+    }
 # --------------------------------------------------
 # RESET
 # --------------------------------------------------

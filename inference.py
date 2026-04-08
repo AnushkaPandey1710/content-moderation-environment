@@ -18,6 +18,7 @@ BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+print("OPENAI_API_KEY:", OPENAI_API_KEY)
 
 if not BASE_URL or not API_KEY:
     raise ValueError("Missing API_BASE_URL or API_KEY")
@@ -160,6 +161,9 @@ def rule_policy(obs):
 # LLM POLICY
 # --------------------------------------------------
 def llm_policy(obs):
+    if client is None:
+        return rule_policy(obs)
+
     prompt = f"""
 You are a content moderation agent.
 
@@ -196,7 +200,6 @@ Return ONLY a number:
 
     except Exception:
         return rule_policy(obs)
-
 # --------------------------------------------------
 # RUN TASK
 # --------------------------------------------------

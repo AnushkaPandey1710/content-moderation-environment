@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request, HTTPException, Header
+from fastapi import FastAPI, Request, HTTPException
 from uuid import uuid4
 import os
 from dotenv import load_dotenv
+import uvicorn
 
 from server.content_moderation_environment import ContentModerationEnvironment
 from models import (
@@ -9,16 +10,12 @@ from models import (
     ContentModerationAction
 )
 
-import uvicorn
-
 # --------------------------------------------------
 # LOAD ENV
 # --------------------------------------------------
 load_dotenv()
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.getenv("API_KEY")  # OPTIONAL
 
-if not API_KEY:
-    raise ValueError("API_KEY is required")
 # --------------------------------------------------
 # APP INIT
 # --------------------------------------------------
@@ -28,19 +25,38 @@ app = FastAPI(title="Content Moderation Environment API")
 sessions = {}
 
 # --------------------------------------------------
-# AUTH HELPER
+# AUTH HELPER (SAFE + OPTIONAL)
 # --------------------------------------------------
-def verify_api_key(x_api_key: str = Header(None)):
+def verify_api_key(request: Request):
+    """
+    Auth behavior:
+    - If API_KEY not set → allow all
+    - If no header → allow (validator safe)
+    - If header present → validate
+    """
+
+    if not API_KEY:
+        return True
+
+    x_api_key = request.headers.get("x-api-key")
+
+    # Allow validator / public access
+    if x_api_key is None:
+        return True
+
+    # Validate only if provided
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    return True
 
 
 # --------------------------------------------------
 # RESET
 # --------------------------------------------------
 @app.post("/reset")
-async def reset(x_api_key: str = Header(None)):
-    verify_api_key(x_api_key)
+async def reset(request: Request):
+    verify_api_key(request)
 
     try:
         session_id = str(uuid4())
@@ -63,8 +79,8 @@ async def reset(x_api_key: str = Header(None)):
 # STEP
 # --------------------------------------------------
 @app.post("/step")
-async def step(request: Request, x_api_key: str = Header(None)):
-    verify_api_key(x_api_key)
+async def step(request: Request):
+    verify_api_key(request)
 
     try:
         data = await request.json()
@@ -104,8 +120,8 @@ async def step(request: Request, x_api_key: str = Header(None)):
 # STATE
 # --------------------------------------------------
 @app.post("/state")
-async def get_state(request: Request, x_api_key: str = Header(None)):
-    verify_api_key(x_api_key)
+async def get_state(request: Request):
+    verify_api_key(request)
 
     try:
         data = await request.json()
@@ -119,7 +135,8 @@ async def get_state(request: Request, x_api_key: str = Header(None)):
 
         env = sessions[session_id]
 
-        if not env.data:
+        # Edge case: no data yet
+        if not getattr(env, "data", None):
             return {
                 "session_id": session_id,
                 "state": {},

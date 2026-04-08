@@ -2,6 +2,7 @@ import os
 import argparse
 import requests
 from typing import List, Optional
+from openai import OpenAI
 
 from models import ModerationDecision
 from tasks import TASKS
@@ -9,12 +10,31 @@ from tasks import TASKS
 # -----------------------
 # CONFIG
 # -----------------------
-MODEL_NAME = os.getenv("MODEL_NAME", "rule-based-agent")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 ENV_NAME = "content-moderation"
 
 MAX_STEPS = 10
 SUCCESS_THRESHOLD = 0.6
 
+#  REQUIRED (Phase 2 FIX)
+API_BASE_URL = os.environ.get("API_BASE_URL")
+API_KEY = os.environ.get("API_KEY")
+
+USE_LLM = True  #  MUST be True for Phase 2
+
+# -----------------------
+# INIT LLM CLIENT
+# -----------------------
+client = None
+
+if USE_LLM:
+    if not API_BASE_URL or not API_KEY:
+        raise ValueError("Missing API_BASE_URL or API_KEY (required for evaluation)")
+
+    client = OpenAI(
+        base_url=API_BASE_URL,   # 
+        api_key=API_KEY          # 
+    )
 
 # -----------------------
 # CLI CONFIG
@@ -104,9 +124,9 @@ def step_env(session_id, action, confidence):
 
 
 # -----------------------
-# POLICY
+# RULE POLICY (fallback)
 # -----------------------
-def policy(obs):
+def rule_policy(obs):
     tox = obs["toxicity"]
     amb = obs["ambiguity"]
     rep = obs["reports"]
@@ -135,6 +155,44 @@ def policy(obs):
 
 
 # -----------------------
+# LLM POLICY (REQUIRED)
+# -----------------------
+def llm_policy(obs):
+    prompt = f"""
+You are a content moderation agent.
+
+toxicity={obs['toxicity']}
+ambiguity={obs['ambiguity']}
+reports={obs['reports']}
+virality={obs['virality']}
+user_reputation={obs['user_reputation']}
+
+Return ONLY:
+0 = ALLOW
+1 = FLAG
+3 = ESCALATE
+"""
+
+    try:
+        res = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+
+        action = int(res.choices[0].message.content.strip())
+
+        if action not in [0, 1, 3]:
+            action = 0
+
+        return action, 0.9
+
+    except Exception:
+        # fallback
+        return rule_policy(obs)
+
+
+# -----------------------
 # RUN SINGLE TASK
 # -----------------------
 def run_task(task_name: str):
@@ -153,7 +211,10 @@ def run_task(task_name: str):
             break
 
         try:
-            action, confidence = policy(observation)
+            if USE_LLM:
+                action, confidence = llm_policy(observation)
+            else:
+                action, confidence = rule_policy(observation)
 
             observation, reward, done, info = step_env(
                 session_id, action, confidence
@@ -191,7 +252,7 @@ def run_task(task_name: str):
 
 
 # -----------------------
-# MAIN (MULTI TASK)
+# MAIN
 # -----------------------
 if __name__ == "__main__":
     for task_name in TASKS.keys():

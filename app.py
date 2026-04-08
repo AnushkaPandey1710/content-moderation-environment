@@ -20,13 +20,6 @@ API_KEY = os.getenv("API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-print("=== ENV DEBUG ===")
-print("API_BASE_URL:", BASE_URL)
-print("API_KEY:", API_KEY)
-print("OPENAI_API_KEY:", OPENAI_API_KEY)
-print("=================")
-API_KEY = os.getenv("API_KEY")  # OPTIONAL
-
 # --------------------------------------------------
 # APP INIT
 # --------------------------------------------------

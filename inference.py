@@ -27,12 +27,9 @@ def get_args():
 
 args = get_args()
 
-'''
 BASE_URL = args.base_url or os.getenv("BASE_URL") or \
-    "http://localhost:8000/"
+    "https://anushkapandey1710-content-moderation-environment.hf.space"
 
-'''
-BASE_URL = "http://127.0.0.1:8000"  # must match the server host & port
 
 # -----------------------
 # LOGGING (STRICT FORMAT)

@@ -67,46 +67,66 @@ async def step(request: Request):
 # --------------------------------------------------
 # STATE
 # --------------------------------------------------
+from fastapi import FastAPI, Request, HTTPException
+
+app = FastAPI()
+
 @app.post("/state")
 async def get_state(request: Request):
-    data = await request.json()
-    session_id = data.get("session_id")
+    try:
+        data = await request.json()
+        session_id = data.get("session_id")
 
-    if session_id not in sessions:
-        return {"error": "Invalid session_id"}
+        if not session_id:
+            raise HTTPException(status_code=400, detail="Missing session_id in request")
 
-    env = sessions[session_id]
+        if session_id not in sessions:
+            raise HTTPException(status_code=404, detail=f"Invalid session_id: {session_id}")
 
-    # If no data yet (edge case)
-    if not env.data:
-        return {"session_id": session_id, "state": {}}
+        env = sessions[session_id]
 
-    # Safe index
-    idx = min(env.current_idx, len(env.data) - 1)
-    sample = env.data[idx]
+        # Handle edge case: no data yet
+        if not env.data:
+            return {"session_id": session_id, "state": {}}
 
+        # Safe index
+        idx = min(env.current_idx, len(env.data) - 1)
+        sample = env.data[idx]
+
+        state = {
+            "current_message": sample.get("text", ""),
+            "context": sample.get("context", {}),
+            "message_length": len(sample.get("text", "")),
+            "toxicity": sample.get("toxicity", 0.0),
+            "virality": sample.get("virality", 0.0),
+            "reports": sample.get("reports", 0),
+            "user_reputation": sample.get("user_reputation", 0),
+            "ambiguity": sample.get("ambiguity", 0.0),
+            "severity": sample.get("severity", 0.0),
+            "step": getattr(env._state, "step_count", 0),
+            "total_steps": getattr(env, "max_steps", 0),
+            "reward": 0.0,
+            "done": False,
+            "info": {}
+        }
+
+        return {
+            "session_id": session_id,
+            "state": state
+        }
+
+    except HTTPException as e:
+        # Let FastAPI handle known HTTP errors
+        raise e
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        return {
+            "error": "Failed to fetch state",
+            "details": str(e)
+        }
     
-    state = {
-        "current_message": sample["text"],
-        "context": sample["context"],
-        "message_length": len(sample["text"]),
-        "toxicity": sample["toxicity"],
-        "virality": sample["virality"],
-        "reports": sample["reports"],
-        "user_reputation": sample["user_reputation"],
-        "ambiguity": sample["ambiguity"],
-        "severity": sample["severity"],
-        "step": env._state.step_count,
-        "total_steps": env.max_steps,
-        "reward": 0.0,
-        "done": False,
-        "info": {}
-    }
-
-    return {
-        "session_id": session_id,
-        "state": state
-    }
+    
 # --------------------------------------------------
 # SCHEMA
 # --------------------------------------------------

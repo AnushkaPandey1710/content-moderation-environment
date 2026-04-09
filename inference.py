@@ -24,7 +24,7 @@ if not BASE_URL or not API_KEY:
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_NAME = "content-moderation"
 
 MAX_STEPS = 10
@@ -38,9 +38,9 @@ client = None
 if USE_LLM:
     try:
         client = OpenAI(
-            base_url=BASE_URL,
+            base_url=f"{BASE_URL}/v1",   
             api_key=API_KEY
-        )
+)
     except Exception:
         USE_LLM = False
 # --------------------------------------------------
@@ -222,7 +222,9 @@ user_reputation={obs.get('user_reputation', 0)}
 # --------------------------------------------------
 def hybrid_policy(obs, task_name, step):
     action, confidence = llm_policy(obs, task_name)
-
+    if step == 1:
+        return llm_policy(obs, task_name)
+    
     if task_name == "basic_toxicity":
         if step % 3 == 0:
             return 0, 0.7

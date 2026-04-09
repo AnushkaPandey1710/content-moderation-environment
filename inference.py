@@ -13,24 +13,29 @@ from dotenv import load_dotenv
 # --------------------------------------------------
 load_dotenv(".env", override=False)
 
-# 🔥 IMPORTANT: separate URLs
-#API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-#API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-
-
-API_BASE_URL = os.environ["API_BASE_URL"]
-API_KEY = os.environ["API_KEY"]
+# ✅ REQUIRED (STRICT)
+LLM_BASE_URL = os.environ["API_BASE_URL"]
+LLM_API_KEY = os.environ["API_KEY"]
 
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
-if not API_BASE_URL or not API_KEY:
-    raise ValueError("Missing API_BASE_URL or API_KEY")
+# --------------------------------------------------
+# CLI CONFIG
+# --------------------------------------------------
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--env_url", type=str, required=True)  # ✅ MUST be separate
+    args, _ = parser.parse_known_args()
+    return args
 
-
+args = get_args()
+ENV_BASE_URL = os.getenv("ENV_BASE_URL")
+if not ENV_BASE_URL:
+    raise ValueError("Missing ENV_BASE_URL")
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
-MODEL_NAME = "gpt-4o-mini"   # 🔥 safe model
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 ENV_NAME = "content-moderation"
 
 MAX_STEPS = 10
@@ -43,28 +48,16 @@ client = None
 
 if USE_LLM:
     try:
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
-    except Exception:
+        client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+    except Exception as e:
+        print(f"[DEBUG] Failed to init LLM client: {e}", flush=True)
         USE_LLM = False
 
 # --------------------------------------------------
-# CLI CONFIG
-# --------------------------------------------------
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env_url", type=str, default=None)
-    args, _ = parser.parse_known_args()
-    return args
-
-args = get_args()
-
-
-# --------------------------------------------------
-# HEADERS
+# HEADERS (ENV SERVER ONLY)
 # --------------------------------------------------
 HEADERS = {
-    "x-api-key": API_KEY,
+    "x-api-key": LLM_API_KEY,
     "Content-Type": "application/json"
 }
 
@@ -87,20 +80,13 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
 # --------------------------------------------------
 def reset_env():
     try:
-        res = requests.post(f"{API_BASE_URL}/reset", headers=HEADERS, timeout=15)
+        res = requests.post(f"{ENV_BASE_URL}/reset", headers=HEADERS, timeout=15)
 
         if res.status_code != 200:
             raise Exception(f"Reset failed: {res.text}")
 
         data = res.json()
-
-        session_id = data.get("session_id")
-        state = data.get("state", {})
-
-        if not session_id:
-            raise Exception("Missing session_id")
-
-        return session_id, state
+        return data.get("session_id"), data.get("state", {})
 
     except Exception as e:
         print(f"[ERROR] reset_env: {e}", flush=True)
@@ -109,7 +95,7 @@ def reset_env():
 def step_env(session_id, action, confidence):
     try:
         res = requests.post(
-            f"{API_BASE_URL}/step",
+            f"{ENV_BASE_URL}/step",
             json={
                 "session_id": session_id,
                 "action": action,
@@ -147,19 +133,14 @@ def rule_policy(obs):
 
         if tox < 0.2 and amb < 0.3:
             return 0, 0.95
-
         if tox > 0.85:
             return 1, 0.95
-
         if amb > 0.7:
             return 3, min(1.0, amb)
-
         if tox > 0.6 and (rep > 50 or vir > 0.6):
             return 1, 0.85
-
         if tox > 0.5 and user_rep < 0.3:
             return 1, 0.8
-
         if 0.3 < tox <= 0.6:
             return 1, 0.6
 
@@ -169,7 +150,7 @@ def rule_policy(obs):
         return 0, 0.5
 
 # --------------------------------------------------
-# LLM POLICY (LiteLLM call)
+# LLM POLICY (FIXED ✅)
 # --------------------------------------------------
 def llm_policy(obs, task_name):
     if client is None:
@@ -195,16 +176,17 @@ user_reputation={obs.get('user_reputation', 0)}
     try:
         print("[LLM HIT]", flush=True)
 
-        res = client.responses.create(
+        res = client.chat.completions.create(
             model=MODEL_NAME,
-            input=prompt,
-            temperature=0.2
+            messages=[
+                {"role": "system", "content": "You are a content moderation system."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=10
         )
 
-        try:
-            content = res.output[0].content[0].text.strip()
-        except Exception:
-            content = "1"
+        content = (res.choices[0].message.content or "").strip()
 
         action = int(content) if content.isdigit() else 1
 
@@ -216,7 +198,7 @@ user_reputation={obs.get('user_reputation', 0)}
     except Exception as e:
         print(f"[ERROR] LLM failed: {e}", flush=True)
         return 1, 0.5
-    
+
 # --------------------------------------------------
 # RUN TASK
 # --------------------------------------------------
@@ -234,9 +216,6 @@ def run_task(task_name: str):
         log_end(False, 0, 0.0, [])
         return
 
-    if not isinstance(observation, dict):
-        observation = {}
-
     done = False
 
     for step in range(1, MAX_STEPS + 1):
@@ -249,32 +228,14 @@ def run_task(task_name: str):
             else:
                 action, confidence = rule_policy(observation)
 
-            if action not in [0, 1, 3]:
-                action = 0
-
-            if not isinstance(confidence, (int, float)):
-                confidence = 0.5
-
             observation, reward, done, info = step_env(
                 session_id, action, confidence
             )
 
-            if not isinstance(observation, dict):
-                observation = {}
+            final_info = info or {}
 
-            if not isinstance(reward, (int, float)):
-                reward = 0.0
-
-            if not isinstance(done, bool):
-                done = True
-
-            if not isinstance(info, dict):
-                info = {}
-
-            final_info = info
-
-            rewards.append(float(reward))
-            total_reward += float(reward)
+            rewards.append(float(reward or 0.0))
+            total_reward += float(reward or 0.0)
             step_count = step
 
             try:
@@ -282,22 +243,13 @@ def run_task(task_name: str):
             except Exception:
                 action_name = str(action)
 
-            log_step(step, action_name, float(reward), done, None)
+            log_step(step, action_name, float(reward or 0.0), done, None)
 
         except Exception as e:
             log_step(step, "error", 0.0, True, str(e))
             break
 
-    try:
-        if "final_score" in final_info:
-            score = float(final_info["final_score"])
-        elif step_count > 0:
-            score = total_reward / step_count
-        else:
-            score = 0.0
-    except Exception:
-        score = 0.0
-
+    score = float(final_info.get("final_score", total_reward / max(step_count, 1)))
     score = max(0.0, min(1.0, score))
     success = score >= SUCCESS_THRESHOLD
 

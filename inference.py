@@ -209,10 +209,12 @@ def run_task(task_name: str):
         print("[WARN] No session_id, forcing LLM call", flush=True)
 
         if USE_LLM and client:
-            llm_policy({}, task_name)  # 🔥 ensures proxy hit
+            llm_policy({}, task_name)
 
-        log_end(False, 0, 0.0, [])
-        return   # ✅ CRITICAL
+        # ❗ FIX: avoid 0.0 score
+        epsilon = 1e-6
+        log_end(False, 0, epsilon, [])
+        return
 
     done = False
 
@@ -221,7 +223,6 @@ def run_task(task_name: str):
             break
 
         try:
-            # ✅ Always prefer LLM if enabled
             if USE_LLM and client:
                 action, confidence = llm_policy(observation, task_name)
             else:
@@ -233,7 +234,12 @@ def run_task(task_name: str):
 
             final_info = info or {}
 
-            reward = float(reward or 0.0)
+            # ✅ safer reward handling
+            try:
+                reward = float(reward)
+            except (TypeError, ValueError):
+                reward = 0.0
+
             rewards.append(reward)
             total_reward += reward
             step_count = step
@@ -249,14 +255,26 @@ def run_task(task_name: str):
             log_step(step, "error", 0.0, True, str(e))
             break
 
-    # ✅ Safe score calculation
-    if step_count > 0:
-        score = float(final_info.get("final_score", total_reward / step_count))
-    else:
-        score = 0.5
+    # =========================
+    # ✅ FIXED SCORE LOGIC
+    # =========================
+    raw_score = None
 
+    try:
+        raw_score = float(final_info.get("final_score"))
+    except (TypeError, ValueError):
+        raw_score = None
+
+    if raw_score is None:
+        if step_count > 0:
+            raw_score = total_reward / step_count
+        else:
+            raw_score = 0.5
+
+    # ✅ STRICT clamp (0,1)
     epsilon = 1e-6
-    score = max(epsilon, min(1.0 - epsilon, score))
+    score = min(max(raw_score, epsilon), 1.0 - epsilon)
+
     success = score >= SUCCESS_THRESHOLD
 
     log_end(success, step_count, score, rewards)

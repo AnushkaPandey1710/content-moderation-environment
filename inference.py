@@ -19,16 +19,6 @@ LLM_API_KEY = os.environ["API_KEY"]
 
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
-# --------------------------------------------------
-# CLI CONFIG
-# --------------------------------------------------
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env_url", type=str, required=True)  # ✅ MUST be separate
-    args, _ = parser.parse_known_args()
-    return args
-
-args = get_args()
 ENV_BASE_URL = os.getenv("ENV_BASE_URL")
 if not ENV_BASE_URL:
     raise ValueError("Missing ENV_BASE_URL")

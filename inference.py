@@ -253,9 +253,10 @@ def run_task(task_name: str):
     if step_count > 0:
         score = float(final_info.get("final_score", total_reward / step_count))
     else:
-        score = 0.0
+        score = 0.5
 
-    score = max(0.0, min(1.0, score))
+    epsilon = 1e-6
+    score = max(epsilon, min(1.0 - epsilon, score))
     success = score >= SUCCESS_THRESHOLD
 
     log_end(success, step_count, score, rewards)

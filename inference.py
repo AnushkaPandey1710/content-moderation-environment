@@ -174,6 +174,7 @@ def rule_policy(obs):
 # --------------------------------------------------
 # LLM POLICY
 # --------------------------------------------------
+
 def llm_policy(obs, task_name):
     if client is None:
         return rule_policy(obs)
@@ -196,13 +197,13 @@ user_reputation={obs.get('user_reputation', 0)}
 """
 
     try:
-        res = client.chat.completions.create(
+        res = client.responses.create(
             model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
+            input=prompt,
             temperature=0.2
         )
 
-        content = res.choices[0].message.content.strip()
+        content = res.output[0].content[0].text.strip()
 
         try:
             action = int(content)
@@ -216,7 +217,7 @@ user_reputation={obs.get('user_reputation', 0)}
 
     except Exception:
         return rule_policy(obs)
-
+    
 # --------------------------------------------------
 # HYBRID POLICY
 # --------------------------------------------------

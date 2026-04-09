@@ -14,11 +14,16 @@ from dotenv import load_dotenv
 load_dotenv(".env", override=False)
 
 # 🔥 IMPORTANT: separate URLs
-BASE_URL = os.getenv("API_BASE_URL")
-API_KEY = os.getenv("API_KEY")
+#API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+#API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+
+
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY = os.environ["API_KEY"]
+
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
-if not BASE_URL or not API_KEY:
+if not API_BASE_URL or not API_KEY:
     raise ValueError("Missing API_BASE_URL or API_KEY")
 
 
@@ -38,10 +43,8 @@ client = None
 
 if USE_LLM:
     try:
-        client = OpenAI(
-            base_url=f"{BASE_URL}/v1",
-            api_key=API_KEY
-        )
+        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+
     except Exception:
         USE_LLM = False
 
@@ -84,7 +87,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
 # --------------------------------------------------
 def reset_env():
     try:
-        res = requests.post(f"{BASE_URL}/reset", headers=HEADERS, timeout=15)
+        res = requests.post(f"{API_BASE_URL}/reset", headers=HEADERS, timeout=15)
 
         if res.status_code != 200:
             raise Exception(f"Reset failed: {res.text}")
@@ -106,7 +109,7 @@ def reset_env():
 def step_env(session_id, action, confidence):
     try:
         res = requests.post(
-            f"{BASE_URL}/step",
+            f"{API_BASE_URL}/step",
             json={
                 "session_id": session_id,
                 "action": action,

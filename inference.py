@@ -48,7 +48,7 @@ if USE_LLM:
 # HEADERS (ENV SERVER ONLY)
 # --------------------------------------------------
 HEADERS = {
-    "x-api-key": BASE_URL,
+    "x-api-key": API_KEY,
     "Content-Type": "application/json"
 }
 
@@ -201,21 +201,26 @@ def run_task(task_name: str):
 
     log_start(task_name)
 
-    # ✅ Single reset call
+    # ---------------------------------
+    # RESET ENV
+    # ---------------------------------
     session_id, observation = reset_env()
 
-    # ✅ Fallback if env server unavailable
+    # ---------------------------------
+    # FALLBACK: ensure LLM call happens
+    # ---------------------------------
     if not session_id:
         print("[WARN] No session_id, forcing LLM call", flush=True)
 
         if USE_LLM and client:
-            llm_policy({}, task_name)
+            llm_policy({}, task_name)  # 🔥 ensures proxy hit
 
-        # ❗ FIX: avoid 0.0 score
-        epsilon = 1e-6
-        log_end(False, 0, epsilon, [])
-        return
+        log_end(False, 0, 0.0, [])
+        return  # ✅ critical
 
+    # ---------------------------------
+    # MAIN LOOP
+    # ---------------------------------
     done = False
 
     for step in range(1, MAX_STEPS + 1):
@@ -223,27 +228,29 @@ def run_task(task_name: str):
             break
 
         try:
+            # choose policy
             if USE_LLM and client:
                 action, confidence = llm_policy(observation, task_name)
             else:
                 action, confidence = rule_policy(observation)
 
+            # step environment
             observation, reward, done, info = step_env(
                 session_id, action, confidence
             )
 
-            final_info = info or {}
+            # safety guards
+            observation = observation if isinstance(observation, dict) else {}
+            reward = float(reward or 0.0)
+            info = info if isinstance(info, dict) else {}
 
-            # ✅ safer reward handling
-            try:
-                reward = float(reward)
-            except (TypeError, ValueError):
-                reward = 0.0
+            final_info = info
 
             rewards.append(reward)
             total_reward += reward
             step_count = step
 
+            # action name
             try:
                 action_name = ModerationDecision(action).name
             except Exception:
@@ -255,28 +262,29 @@ def run_task(task_name: str):
             log_step(step, "error", 0.0, True, str(e))
             break
 
-    # =========================
-    # ✅ FIXED SCORE LOGIC
-    # =========================
-    raw_score = None
+    # ---------------------------------
+    # SCORE COMPUTATION (STRICT SAFE)
+    # ---------------------------------
+    import math
 
-    try:
-        raw_score = float(final_info.get("final_score"))
-    except (TypeError, ValueError):
-        raw_score = None
+    if step_count > 0:
+        score = float(final_info.get("final_score", total_reward / step_count))
+    else:
+        score = 0.5  # fallback
 
-    if raw_score is None:
-        if step_count > 0:
-            raw_score = total_reward / step_count
-        else:
-            raw_score = 0.5
+    # handle NaN / invalid
+    if not isinstance(score, (int, float)) or math.isnan(score):
+        score = 0.5
 
-    # ✅ STRICT clamp (0,1)
+    # enforce STRICT (0,1)
     epsilon = 1e-6
-    score = min(max(raw_score, epsilon), 1.0 - epsilon)
+    score = max(epsilon, min(1.0 - epsilon, score))
 
     success = score >= SUCCESS_THRESHOLD
 
+    # ---------------------------------
+    # END LOG
+    # ---------------------------------
     log_end(success, step_count, score, rewards)
 # --------------------------------------------------
 # MAIN

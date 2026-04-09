@@ -15,7 +15,6 @@ load_dotenv()
 
 BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
@@ -36,11 +35,14 @@ SUCCESS_THRESHOLD = 0.6
 # --------------------------------------------------
 client = None
 
-if USE_LLM and OPENAI_API_KEY:
-    client = OpenAI(api_key=OPENAI_API_KEY)
-else:
-    USE_LLM = False
-
+if USE_LLM:
+    try:
+        client = OpenAI(
+            base_url=BASE_URL,
+            api_key=API_KEY
+        )
+    except Exception:
+        USE_LLM = False
 # --------------------------------------------------
 # CLI CONFIG
 # --------------------------------------------------

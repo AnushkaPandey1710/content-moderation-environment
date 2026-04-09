@@ -11,51 +11,51 @@ from dotenv import load_dotenv
 # --------------------------------------------------
 # LOAD ENV
 # --------------------------------------------------
-load_dotenv()
+load_dotenv(".env", override=False)
 
+# 🔥 IMPORTANT: separate URLs
 BASE_URL = os.getenv("API_BASE_URL")
 API_KEY = os.getenv("API_KEY")
-
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
 if not BASE_URL or not API_KEY:
     raise ValueError("Missing API_BASE_URL or API_KEY")
 
+
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+MODEL_NAME = "gpt-4o-mini"   # 🔥 safe model
 ENV_NAME = "content-moderation"
 
 MAX_STEPS = 10
 SUCCESS_THRESHOLD = 0.6
 
 # --------------------------------------------------
-# INIT LLM CLIENT
+# INIT LLM CLIENT (LiteLLM proxy)
 # --------------------------------------------------
 client = None
 
 if USE_LLM:
     try:
         client = OpenAI(
-            base_url=f"{BASE_URL}/v1",   
+            base_url=f"{BASE_URL}/v1",
             api_key=API_KEY
-)
+        )
     except Exception:
         USE_LLM = False
+
 # --------------------------------------------------
 # CLI CONFIG
 # --------------------------------------------------
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base_url", type=str, default=None)
+    parser.add_argument("--env_url", type=str, default=None)
     args, _ = parser.parse_known_args()
     return args
 
 args = get_args()
 
-if args.base_url:
-    BASE_URL = args.base_url
 
 # --------------------------------------------------
 # HEADERS
@@ -80,7 +80,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]):
     print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
 
 # --------------------------------------------------
-# API CALLS
+# API CALLS (ENV SERVER)
 # --------------------------------------------------
 def reset_env():
     try:
@@ -89,16 +89,13 @@ def reset_env():
         if res.status_code != 200:
             raise Exception(f"Reset failed: {res.text}")
 
-        try:
-            data = res.json()
-        except Exception:
-            raise Exception(f"Invalid JSON response: {res.text}")
+        data = res.json()
 
         session_id = data.get("session_id")
         state = data.get("state", {})
 
         if not session_id:
-            raise Exception(f"Missing session_id in response")
+            raise Exception("Missing session_id")
 
         return session_id, state
 
@@ -122,10 +119,7 @@ def step_env(session_id, action, confidence):
         if res.status_code != 200:
             raise Exception(f"Step failed: {res.text}")
 
-        try:
-            data = res.json()
-        except Exception:
-            raise Exception(f"Invalid JSON: {res.text}")
+        data = res.json()
 
         return (
             data.get("state", {}),
@@ -172,9 +166,8 @@ def rule_policy(obs):
         return 0, 0.5
 
 # --------------------------------------------------
-# LLM POLICY
+# LLM POLICY (LiteLLM call)
 # --------------------------------------------------
-
 def llm_policy(obs, task_name):
     if client is None:
         return rule_policy(obs)
@@ -197,49 +190,30 @@ user_reputation={obs.get('user_reputation', 0)}
 """
 
     try:
+        print("[LLM HIT]", flush=True)
+
         res = client.responses.create(
             model=MODEL_NAME,
             input=prompt,
             temperature=0.2
         )
 
-        content = res.output[0].content[0].text.strip()
-
         try:
-            action = int(content)
+            content = res.output[0].content[0].text.strip()
         except Exception:
-            action = 1
+            content = "1"
+
+        action = int(content) if content.isdigit() else 1
 
         if action not in [0, 1, 3]:
             action = 1
 
         return action, 0.8
 
-    except Exception:
-        return rule_policy(obs)
+    except Exception as e:
+        print(f"[ERROR] LLM failed: {e}", flush=True)
+        return 1, 0.5
     
-# --------------------------------------------------
-# HYBRID POLICY
-# --------------------------------------------------
-def hybrid_policy(obs, task_name, step):
-    action, confidence = llm_policy(obs, task_name)
-    if step == 1:
-        return llm_policy(obs, task_name)
-    
-    if task_name == "basic_toxicity":
-        if step % 3 == 0:
-            return 0, 0.7
-
-    elif task_name == "contextual_moderation":
-        if step % 4 == 0:
-            return 3, 0.6
-
-    elif task_name == "ambiguous_harm":
-        if step % 2 == 0:
-            return 3, 0.55
-
-    return action, confidence
-
 # --------------------------------------------------
 # RUN TASK
 # --------------------------------------------------
@@ -268,7 +242,7 @@ def run_task(task_name: str):
 
         try:
             if USE_LLM:
-                action, confidence = hybrid_policy(observation, task_name, step)
+                action, confidence = llm_policy(observation, task_name)
             else:
                 action, confidence = rule_policy(observation)
 

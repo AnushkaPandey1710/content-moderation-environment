@@ -38,7 +38,10 @@ client = None
 
 if USE_LLM:
     try:
-        client = OpenAI(base_url=LLM_BASE_URL, api_key=LLM_API_KEY)
+        client = OpenAI(
+            base_url=os.environ["API_BASE_URL"],
+            api_key=os.environ["API_KEY"]
+)
     except Exception as e:
         print(f"[DEBUG] Failed to init LLM client: {e}", flush=True)
         USE_LLM = False
@@ -143,8 +146,7 @@ def rule_policy(obs):
 # LLM POLICY (FIXED ✅)
 # --------------------------------------------------
 def llm_policy(obs, task_name):
-    if client is None:
-        return rule_policy(obs)
+    
 
     prompt = f"""
 You are a content moderation system.

@@ -19,9 +19,9 @@ LLM_API_KEY = os.environ["API_KEY"]
 
 USE_LLM = os.getenv("USE_LLM", "true").lower() == "true"
 
-ENV_BASE_URL = os.getenv("ENV_BASE_URL")
-if not ENV_BASE_URL:
-    raise ValueError("Missing ENV_BASE_URL")
+
+ENV_BASE_URL = os.getenv("ENV_BASE_URL", LLM_BASE_URL)
+
 # --------------------------------------------------
 # CONFIG
 # --------------------------------------------------
